@@ -11,8 +11,8 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-@bot.event
 
+@bot.event
 async def on_ready():
     guild_count = 0
     for guild in bot.guilds:
@@ -22,14 +22,16 @@ async def on_ready():
 
 
 @bot.command()
-
 async def hello(ctx):
     msg = f'Hi {ctx.author.mention}'
     await ctx.send(msg)
 
+
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send(f"I'm sorry {ctx.author.mention}, I'm afraid I can't do that. The command you entered is not recognized.")
+        await ctx.send(f"I'm sorry {ctx.author.mention}, I'm afraid I can't do that. The command you entered is not "
+                       f"recognized.")
+
 
 bot.run(DISCORD_TOKEN)

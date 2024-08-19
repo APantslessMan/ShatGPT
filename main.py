@@ -11,8 +11,8 @@ STUDY_CAT_ID = 1271981288462487695
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 PERSONALITY = ("You are ShatGPT. you are a grumpy, surly assistant who answers questions with a neutral, irritated "
                "attitude and uses profanity but not to insult others. maintain this tone throughout the "
-               "conversation. do not answer anything to do with drugs, police, bombs or guns. if asked for code "
-               "examples, respond to use google. Do not give any help breaking laws or "
+               "conversation. do not answer anything to do with drugs, police, bombs or guns. if asked for help with "
+               "programming, do not give code examples, respond to use google. Do not give any help breaking laws or "
                "doing things that are immoral. ")
 CHANNEL_LIMIT = 4
 
@@ -22,10 +22,10 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 openai.api_key = os.getenv("OPENROUTER_API_KEY")
 openai.api_base = os.getenv("OPENAI_BASE_URL")
-
+db_name = "shatgpt.db"
 
 async def init_db():
-    async with aiosqlite.connect('shatgpt.db') as db:
+    async with aiosqlite.connect(db_name) as db:
         await db.execute('''
             CREATE TABLE IF NOT EXISTS studyrooms (
                 id INTEGER PRIMARY KEY,
@@ -41,9 +41,32 @@ async def init_db():
                       channel_count INTEGER DEFAULT 0
                   )
               ''')
+        await db.execute('''
+                  CREATE TABLE IF NOT EXISTS prefs (
+                      prefid INTEGER PRIMARY KEY,
+                      pref TEXT NOT NULL,
+                      content TEXT NOT NULL
+                  )
+              ''')
+        await db.execute('''
+            INSERT INTO prefs (pref, content)
+            SELECT 'personality', 'You are ShatGPT. You are a grumpy, surly assistant who answers questions with a 
+            neutral, irritated attitude and uses profanity but not to insult others. Maintain this tone throughout the 
+            conversation. Do not answer anything to do with drugs, police, bombs, or guns. If asked for help with 
+            programming, do not give code examples; respond to use Google. Do not give any help breaking laws or doing 
+            things that are immoral.'
+            WHERE NOT EXISTS (SELECT 1 FROM prefs WHERE pref = 'personality')
+        ''')
         await db.commit()
 
 
+async def load_personality():
+    global personality
+    async with aiosqlite.connect(db_name) as db:
+        async with db.execute('SELECT content FROM prefs WHERE pref = "personality"') as cursor:
+            row = await cursor.fetchone()
+            if row:
+                personality = row[0]
 
 
 #################################################
@@ -82,6 +105,7 @@ def format_channel_name(name):
 @bot.event
 async def on_ready():
     await init_db()
+    await load_personality()
     guild_count = 0
     for guild in bot.guilds:
         print(f"- {guild.id} (name: {guild.name})")
@@ -99,7 +123,7 @@ async def on_command_error(ctx, error):
 
 @bot.event
 async def on_disconnect():
-    async with aiosqlite.connect('shatgpt.db') as db:
+    async with aiosqlite.connect(db_name) as db:
         await db.close()
 
 #################################################
@@ -126,7 +150,7 @@ async def hello(ctx):
 @bot.command()
 async def sr(ctx, *, room_name: str):
     user_id = ctx.author.id
-    async with aiosqlite.connect('shatgpt.db') as db:
+    async with aiosqlite.connect(db_name) as db:
         async with db.execute('SELECT channel_count FROM users WHERE user_id = ?', (user_id,)) as cursor:
             row = await cursor.fetchone()
             if row:
@@ -141,7 +165,7 @@ async def sr(ctx, *, room_name: str):
     if category:
         formatted_name = format_channel_name(room_name)
         new_channel = await category.create_text_channel(name=formatted_name)
-        async with aiosqlite.connect('shatgpt.db') as db:
+        async with aiosqlite.connect(db_name) as db:
             await db.execute('''
                 INSERT INTO studyrooms (channel_id, channel_name, created_by)
                 VALUES (?, ?, ?)
@@ -164,7 +188,7 @@ async def rc(ctx, *, channel_name: str):
     category = discord.utils.get(ctx.guild.categories, id=STUDY_CAT_ID)
     channel = discord.utils.get(category.text_channels, name=format_channel_name(channel_name))
     if channel:
-        async with aiosqlite.connect('shatgpt.db') as db:
+        async with aiosqlite.connect(db_name) as db:
             async with db.execute('SELECT created_by FROM studyrooms WHERE channel_id = ?', (channel.id,)) as cursor:
                 row = await cursor.fetchone()
                 creator_id = row[0] if row else None
@@ -185,7 +209,7 @@ async def rc(ctx, *, channel_name: str):
 
 @bot.command()
 async def lr(ctx):
-    async with aiosqlite.connect('shatgpt.db') as db:
+    async with aiosqlite.connect(db_name) as db:
         async with db.execute('SELECT channel_name, created_by, created_at FROM studyrooms') as cursor:
             rows = await cursor.fetchall()
             if rows:
@@ -196,6 +220,29 @@ async def lr(ctx):
 
 
 @bot.command()
+async def primedirective(ctx):
+    await ctx.send(f"Here is my Prime Directive: \n{personality}")
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def set_personality(ctx, *, new_personality: str):
+    """Command to set the personality of the bot."""
+    global personality
+
+    async with aiosqlite.connect(db_name) as db:
+        await db.execute('''
+            UPDATE prefs
+            SET content = ?
+            WHERE pref = 'personality'
+        ''', (new_personality,))
+
+        await db.commit()
+    personality = new_personality
+    await ctx.send(f"The personality has been updated to:\n{personality}")
+
+
+@bot.command()
 async def ask(ctx, *, question: str):
     try:
         print("asking question")
@@ -203,7 +250,7 @@ async def ask(ctx, *, question: str):
             model="openchat/openchat-7b:free",
             messages=[
                 {"role": "system",
-                 "content": PERSONALITY},
+                 "content": personality},
                 {"role": "user", "content": question }
             ]
         )

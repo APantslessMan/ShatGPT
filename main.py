@@ -6,8 +6,8 @@ import openai
 import aiosqlite
 
 load_dotenv()
-MENTOR_ROLE_ID = 1271690917203677194
-STUDY_CAT_ID = 1271981288462487695
+MENTOR_ROLE_ID = os.getenv('MENTOR_ROLE_ID')
+STUDY_CAT_ID = os.getenv('STUDY_CAT_ID')
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 PERSONALITY = ("You are ShatGPT. you are a grumpy, surly assistant who answers questions with a neutral, irritated "
                "attitude and uses profanity but not to insult others. maintain this tone throughout the "
